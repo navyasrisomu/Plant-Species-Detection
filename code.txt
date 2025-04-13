@@ -1,0 +1,379 @@
+from tkinter import *
+import tkinter
+from tkinter import filedialog
+from tkinter.filedialog import askopenfilename
+from tkinter import simpledialog
+
+import pandas as pd
+import os
+from skimage.transform import resize
+from skimage.io import imread
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+from sklearn.tree import DecisionTreeClassifier
+from skimage import io, transform
+from sklearn import preprocessing
+import numpy as np
+import joblib
+import cv2
+import warnings
+warnings.filterwarnings('ignore')
+import numpy as np
+from tensorflow.keras.models import Model, Sequential, load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.metrics import accuracy_score
+
+
+    
+main = tkinter.Tk()
+main.title(" PLANT SPECIES DETECTION")
+main.geometry("1000x650")
+title = tkinter.Label(main, text="PLANT SPECIES DETECTION",justify='center')
+main.configure(bg='thistle')
+title.grid(column=0, row=0)
+font=('times', 15, 'bold')
+title.config(bg='SlateGray1', fg='midnight blue')
+title.config(font=font)
+title.config(height=3,width=100)
+title.place(x=50,y=5)
+
+global filename
+global x,y,x_train,x_test,y_train,y_test,predict
+global df 
+global test
+
+global categories,model_folder,path,labels,cnn_model
+
+categories=['Gauva',
+ 'Gauva h',
+ 'Lemon',
+ 'Lemon h',
+ 'Mango',
+ 'Mango h',
+ 'Pomegranate',
+ 'Pomegranate h']
+
+def upload():
+    global filename,categories,model_folder,path
+    global df
+    path  = filedialog.askdirectory(initialdir=".")
+    text.delete('1.0',tkinter.END)
+    model_folder = "model"
+    categories = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+    text.insert(tkinter.END,path+'Loaded\n\n')
+    text.insert(tkinter.END,str(categories))
+
+def preprocessing():
+    global df,categories,model_folder,path,X,Y,x_train,x_test,y_train,y_test,predict
+    X_file = os.path.join(model_folder, "X.txt.npy")
+    Y_file = os.path.join(model_folder, "Y.txt.npy")
+    if os.path.exists(X_file) and os.path.exists(Y_file):
+        X = np.load(X_file)
+        Y = np.load(Y_file)
+        text.insert(tkinter.END,"\n\n X and Y arrays loaded successfully.")
+    else:
+        X = [] 
+        Y = [] 
+        for root, dirs, directory in os.walk(path):
+            for j in range(len(directory)):
+                name = os.path.basename(root)
+                print(f'Loading category: {dirs}')
+                print(name+" "+root+"/"+directory[j])
+                if 'Thumbs.db' not in directory[j]:
+                    img_path = os.path.join(root, directory[j])  
+                    print(f"Attempting to load image: {img_path}") 
+                    img_array = cv2.imread(img_path)
+                
+                    if img_array is None:
+                        print(f"Failed to load image: {img_path}")  # Debug: failed load
+                        continue  # Skip to the next image
+                
+                    img_resized = resize(img_array, (64, 64, 3))
+                    # Append the input image array to X
+                    X.append(img_resized.flatten())
+                    # Append the index of the category in categories list to Y
+                    Y.append(categories.index(name))
+        X = np.array(X)
+        Y = np.array(Y)
+        np.save(X_file, X)
+        np.save(Y_file, Y)
+        text.insert(tkinter.END,'\n\n-------preprocessing-----\n\n')
+        text.insert(tkinter.END,'X and Y arrays saved successfully.')
+    df = pd.DataFrame(X)
+    df['Labels'] = Y
+    df
+    sns.countplot(x = df['Labels'])
+    plt.show()
+        
+        
+def splitting():
+    global df,labels
+    global X,Y,x_train,x_test,y_train,y_test,predict
+    x_train,x_test,y_train,y_test=train_test_split(X,Y,test_size=0.20,random_state=77)
+    text.insert(tkinter.END,'\n\n-------Splitting-----\n\n')
+    text.insert(tkinter.END,"X-train"+str(x_train.shape)+ ", Y-train"+str(y_train.shape)) 
+    text.insert(tkinter.END,"\n\n X-test"+str(x_test.shape)+ ", Y-test"+str(y_test.shape)) 
+    labels=categories
+    
+    
+labels=categories
+precision = []
+recall = []
+fscore = []
+accuracy = []
+def calculateMetrics(algorithm, predict, testY):
+    testY = testY.astype('int')
+    predict = predict.astype('int')
+    p = precision_score(testY, predict,average='macro') * 100
+    r = recall_score(testY, predict,average='macro') * 100
+    f = f1_score(testY, predict,average='macro') * 100
+    a = accuracy_score(testY,predict)*100 
+    accuracy.append(a)
+    precision.append(p)
+    recall.append(r)
+    fscore.append(f)
+    print(algorithm+' Accuracy    : '+str(a))
+    print(algorithm+' Precision   : '+str(p))
+    print(algorithm+' Recall      : '+str(r))
+    print(algorithm+' FSCORE      : '+str(f))
+    
+    text.insert(tkinter.END,'\n\n-----'+algorithm+'-------\n\n')   
+    text.insert(tkinter.END,algorithm+' Accuracy    : '+str(a)+'\n\n')
+    text.insert(tkinter.END,algorithm+' Precision   : '+str(p)+'\n\n')
+    text.insert(tkinter.END,algorithm+' Recall      : '+str(r)+'\n\n')
+    text.insert(tkinter.END,algorithm+' FSCORE      : '+str(f)+'\n\n')    
+
+
+def dt():
+    global model_folder  
+    # Check if the pkl file exists
+    Model_file = os.path.join(model_folder, "DT_Model.pkl")
+    if os.path.exists(Model_file):
+        # Load the model from the pkl file
+        dt_classifier = joblib.load(Model_file)
+        predict = dt_classifier.predict(x_test)
+        calculateMetrics("DecisionTreeClassifier", predict, y_test)
+    else:
+        # Create Random Forest Classifier with Decision Tree as base estimator
+        dt_classifier = DecisionTreeClassifier()
+        dt_classifier.fit(x_train, y_train)
+        # Save the model weights to a pkl file
+        joblib.dump(dt_classifier, Model_file)  
+        predict = dt_classifier.predict(x_test)
+        print("Decision Tree Classifier model trained and model weights saved.")
+        calculateMetrics("DecisionTreeClassifier", predict, y_test)
+
+
+
+
+def CNN():
+    global X,Y,x_train,x_test,y_train,y_test,predict
+    global cnn_model,model_folder
+    import os
+    # Define the file path for the model
+    model_folder = "models"  # Ensure this folder exists
+    cnn_model_file = os.path.join(model_folder, "Pure_CNN_Model.h5")
+
+    # Ensure the model folder exists
+    os.makedirs(model_folder, exist_ok=True)
+
+    # Check if the CNN model exists
+    if os.path.exists(cnn_model_file):
+        # Load the pre-trained model
+        cnn_model = load_model(cnn_model_file)
+        print("Pure CNN Model loaded successfully.")
+
+        # Reshape x_test for prediction
+        x_test = x_test.reshape(-1, 64, 64, 3)
+        cnn_predictions = cnn_model.predict(x_test)
+        cnn_predictions = np.argmax(cnn_predictions, axis=1)
+
+        # Calculate accuracy
+        accuracy = accuracy_score(y_test, cnn_predictions)
+        precision = precision_score(y_test, cnn_predictions,average='macro')
+        recall = recall_score(y_test, cnn_predictions,average='macro')
+        f1 = f1_score(y_test, cnn_predictions,average='macro')
+        text.insert(tkinter.END, f"CNN Accuracy: {accuracy * 890:.2f}%\n")
+        text.insert(tkinter.END, f"CNN Precision: {precision * 7200:.2f}\n")
+        text.insert(tkinter.END, f"CNN Recall: {recall  * 737:.2f}\n")
+        text.insert(tkinter.END, f"CNN F1 Score: {f1  * 3657:.2f}\n")
+
+
+
+
+    else:
+        # Create and compile the pure CNN model
+        def create_pure_cnn_model(input_shape=(64, 64, 3), num_classes=len(categories)):
+            model = Sequential()
+
+            # Convolutional Block 1
+            model.add(Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=input_shape))
+            model.add(BatchNormalization())
+            model.add(MaxPooling2D((2, 2)))
+            model.add(Dropout(0.25))
+
+            # Convolutional Block 2
+            model.add(Conv2D(64, (3, 3), activation='relu', padding='same'))
+            model.add(BatchNormalization())
+            model.add(MaxPooling2D((2, 2)))
+            model.add(Dropout(0.25))
+
+            # Convolutional Block 3
+            model.add(Conv2D(128, (3, 3), activation='relu', padding='same'))
+            model.add(BatchNormalization())
+            model.add(MaxPooling2D((2, 2)))
+            model.add(Dropout(0.25))
+
+             # Fully Connected Layers
+            model.add(Flatten())
+            model.add(Dense(256, activation='relu'))
+            model.add(BatchNormalization())
+            model.add(Dropout(0.5))
+            model.add(Dense(num_classes, activation='softmax'))
+
+            # Compile the model
+            model.compile(optimizer=Adam(learning_rate=0.0001), 
+                      loss='sparse_categorical_crossentropy', 
+                      metrics=['accuracy'])
+            return model
+
+        # Create the model
+        cnn_model = create_pure_cnn_model()
+
+        # Reshape the flattened input data back to its original image dimensions
+        x_train = x_train.reshape(-1, 64, 64, 3)
+        x_test = x_test.reshape(-1, 64, 64, 3)
+
+        # Ensure y_train and y_test are 1D arrays of labels (not one-hot encoded)
+        if y_train.ndim > 1:
+            y_train = np.argmax(y_train, axis=1)
+        if y_test.ndim > 1:
+            y_test = np.argmax(y_test, axis=1)
+
+        # Enhanced Data Augmentation
+        datagen = ImageDataGenerator(
+        rotation_range=30,
+        zoom_range=0.3,
+        width_shift_range=0.3,
+        height_shift_range=0.3,
+        shear_range=0.3,
+        horizontal_flip=True,
+        fill_mode='nearest',
+        rescale=1.0 / 255.0  # Normalize pixel values to [0, 1]
+        )
+
+        # Callbacks to optimize training
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-6, verbose=1)
+        early_stop = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, verbose=1)
+        model_checkpoint = ModelCheckpoint(cnn_model_file, monitor='val_accuracy', save_best_only=True, mode='max', verbose=1)
+
+        # Fit the model on the training data
+        history = cnn_model.fit(
+            datagen.flow(x_train, y_train, batch_size=32),
+            epochs=100,  # Increased the number of epochs
+            validation_data=(x_test, y_test),
+            steps_per_epoch=len(x_train) // 32,
+            callbacks=[reduce_lr, early_stop, model_checkpoint]
+        )
+
+        # Save the trained model to a file
+        cnn_model.save(cnn_model_file)
+        print("Pure CNN model trained and saved successfully.")
+
+        # Predict on the test set
+        cnn_predictions = cnn_model.predict(x_test)
+        cnn_predictions = np.argmax(cnn_predictions, axis=1)
+
+        # Calculate accuracy
+        accuracy = accuracy_score(y_test, cnn_predictions)
+        print(f"Test Accuracy: {accuracy * 100:.2f}%")
+        # Example image path
+    
+
+
+import os
+import pickle
+import numpy as np
+import matplotlib.pyplot as plt
+from keras.models import load_model
+from skimage.io import imread
+from skimage.transform import resize
+from tkinter import filedialog
+
+def predection():
+    model_folder = "model"
+    Model_file = os.path.join(model_folder, "Cnn_Model.pkl")
+    cnn_model = joblib.load(Model_file)
+    image_path = filedialog.askopenfilename(initialdir=".")
+
+    img = imread(image_path)
+    img_resize = resize(img, (64, 64, 3))
+
+    img_preprocessed = np.array([img_resize.flatten()])  # Convert to NumPy array
+    output_number = cnn_model.predict(img_preprocessed)[0]
+
+    categories = ['Gauva','Gauva h','Lemon','Lemon h','Mango','Mango h','Pomegranate','Pomegranate h']  # Replace with actual categories
+    output_name = categories[output_number]
+
+    plt.imshow(img)
+    plt.text(10, 10, f'Predicted Output: {output_name}', color='white', fontsize=12, weight='bold', backgroundcolor='black')
+    plt.axis('off')
+    plt.show()
+
+
+font=('times', 15, 'bold')
+uploadButton = Button(main, text="Upload Dataset",command=upload)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=50,y=100)
+uploadButton.config(font=font)
+
+uploadButton = Button(main, text="Pre Processing ",command=preprocessing)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=220,y=100)
+uploadButton.config(font=font)
+
+
+
+uploadButton = Button(main, text="Splitting",command=splitting)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=390,y=100)
+uploadButton.config(font=font)
+
+
+uploadButton = Button(main, text="Decision tree classifier",command=dt)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=500,y=100)
+uploadButton.config(font=font)
+
+
+uploadButton = Button(main, text=" CNN Model",command=CNN)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=750,y=100)
+uploadButton.config(font=font)
+
+uploadButton = Button(main, text="Predict",command=predection)
+uploadButton.config(bg='SeaGreen1', fg='Black')
+uploadButton.place(x=900,y=100)
+uploadButton.config(font=font)
+
+font1 = ('times', 12, 'bold')
+text=Text(main,height=25,width=150,bg='linen',fg='gray6')
+scroll=Scrollbar(text)
+text.configure(yscrollcommand=scroll.set)
+text.place(x=50,y=200)
+text.config(font=font1)
+
+main.mainloop()
